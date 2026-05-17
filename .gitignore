@@ -1,0 +1,21 @@
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Python caching
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Videos (hilangkan tanda # di bawah ini jika kamu TIDAK ingin mengupload video ke GitHub agar tidak berat)
+# *.mp4
+# *.avi
+# *.mov
+
+# VS Code
+.vscode/
