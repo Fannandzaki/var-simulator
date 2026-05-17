@@ -11,8 +11,13 @@ import os
 import numpy as np
 import cv2
 import pygame
-from graphics import bgr_array_to_surface
 
+def bgr_array_to_surface(bgr_array, target_size=None):
+    rgb = cv2.cvtColor(bgr_array, cv2.COLOR_BGR2RGB)
+    surf = pygame.surfarray.make_surface(rgb.swapaxes(0, 1))
+    if target_size:
+        surf = pygame.transform.scale(surf, target_size)
+    return surf
 
 # ---------------------------------------------------------------------------
 # Synthetic video generator (fallback when no real .mp4 exists)

@@ -1,415 +1,401 @@
-"""
-screens.py — All game screens (Video Version with Randomization)
-"""
-import os
-import random
-import math
-import pygame
+"""screens.py — VAR Simulator (Retro Desk)"""
+import os, random, math, pygame
 from constants import *
 from video_player import VideoPlayer
 from renderer import bresenham
 
-def draw_text(surf, text, font, color, cx, cy):
-    s = font.render(text, True, color)
-    surf.blit(s, s.get_rect(center=(cx, cy)))
+# ── helpers ──────────────────────────────────────────────────────────────────
+def txt(s,t,f,c,cx,cy):
+    r=f.render(t,True,c); s.blit(r,r.get_rect(center=(cx,cy)))
 
-def fill_rect(surf, rect, fill, border=None, radius=4, bw=1):
-    pygame.draw.rect(surf, fill, rect, border_radius=radius)
-    if border:
-        pygame.draw.rect(surf, border, rect, bw, border_radius=radius)
+def box(s,r,fill,border=None,rad=6,bw=2):
+    if fill is not None: pygame.draw.rect(s,fill,r,border_radius=rad)
+    if border: pygame.draw.rect(s,border,r,bw,border_radius=rad)
 
-def scanlines(surf):
-    for y in range(0, surf.get_height(), 4):
-        pygame.draw.line(surf, (14,14,22), (0,y), (surf.get_width(),y))
+def shadow_box(s,r,fill,border,rad=10):
+    sh=r.move(5,6); pygame.draw.rect(s,(0,0,0,70),sh,border_radius=rad)
+    box(s,r,fill,border,rad)
 
-# ── INTRO ────────────────────────────────────────────────────────────────────
+def scan(s,r):
+    sl=pygame.Surface((r.w,r.h),pygame.SRCALPHA)
+    for y in range(0,r.h,3): pygame.draw.line(sl,(0,0,0,25),(0,y),(r.w,y))
+    s.blit(sl,r.topleft)
+
+def crt(s,rect,sw,sh):
+    """Draw CRT casing. Returns inner screen Rect."""
+    shadow_box(s,rect,CRT_BEIGE,CRT_SHADOW,12)
+    pygame.draw.line(s,WHITE,(rect.x+12,rect.y+5),(rect.right-12,rect.y+5),2)
+    pygame.draw.line(s,CRT_SHADOW,(rect.x+12,rect.bottom-5),(rect.right-12,rect.bottom-5),3)
+    ix,iy=rect.centerx-sw//2, rect.centery-sh//2-8
+    inner=pygame.Rect(ix,iy,sw,sh)
+    bz=inner.inflate(14,14)
+    box(s,bz,CRT_BEZEL,(15,20,20),8,2)
+    box(s,inner,(5,10,15),None,4)
+    for i in range(5): pygame.draw.line(s,CRT_SHADOW,(rect.centerx-20+i*10,rect.bottom-14),(rect.centerx-20+i*10,rect.bottom-8),2)
+    return inner
+
+# ── INTRO ─────────────────────────────────────────────────────────────────────
 class IntroScreen:
-    def __init__(self, fonts):
-        self.F = fonts
-        self.t = 0
-        self.blink = True; self.blink_t = 0
-        self.btn = pygame.Rect(WIN_W//2-140, 460, 280, 50)
-        self.anim = pygame.Surface((340,200))
+    def __init__(self,F):
+        self.F=F; self.t=0; self.blink=True; self.bt=0
+        self.btn=pygame.Rect(WIN_W//2-130,520,260,48)
+        self.anim=pygame.Surface((320,190))
 
-    def handle(self, ev):
-        if ev.type == pygame.MOUSEBUTTONDOWN and self.btn.collidepoint(ev.pos):
-            return "levels"
-        if ev.type == pygame.KEYDOWN and ev.key == pygame.K_RETURN:
-            return "levels"
+    def handle(self,ev):
+        if ev.type==pygame.MOUSEBUTTONDOWN and self.btn.collidepoint(ev.pos): return"levels"
+        if ev.type==pygame.KEYDOWN and ev.key==pygame.K_RETURN: return"levels"
 
     def update(self):
-        self.t += 1
-        self.blink_t += 1
-        if self.blink_t > 28: self.blink = not self.blink; self.blink_t = 0
+        self.t+=1; self.bt+=1
+        if self.bt>28: self.blink=not self.blink; self.bt=0
 
-    def draw(self, surf):
-        surf.fill(INK); scanlines(surf)
-        cx = WIN_W//2; F = self.F
-        draw_text(surf,"GRAFIKA KOMPUTER · FINAL PROJECT 2025",F["tiny"],GREY,cx,36)
-        draw_text(surf,"VAR",F["big"],AMBER,cx,105)
-        draw_text(surf,"VIDEO ASSISTANT REFEREE",F["mono"],GREEN,cx,155)
+    def draw(self,s):
+        s.fill(DESK)
+        # Wall area (darker top band)
+        pygame.draw.rect(s,(90,130,145),(0,0,WIN_W,200))
+        pygame.draw.line(s,(70,110,125),(0,200),(WIN_W,200),4)
 
-        self._draw_anim()
-        fx = cx-170
-        fill_rect(surf,pygame.Rect(fx-2,174,344,204),(14,30,14),(42,74,42),6)
-        surf.blit(self.anim,(fx,176))
+        cx=WIN_W//2; F=self.F
+        txt(s,"GRAFIKA KOMPUTER  ·  FINAL PROJECT 2025",F["tiny"],(180,200,210),cx,28)
+        txt(s,"VAR SIMULATOR",F["press"],WHITE,cx,80)
+        txt(s,"VIDEO ASSISTANT REFEREE",F["mono"],(200,220,225),cx,120)
 
-        draw_text(surf,"Jadilah wasit VAR di Video Operation Room.",F["body"],GREY,cx,400)
-        draw_text(surf,"Analisis tayangan ulang & buat keputusan!",F["body"],GREY,cx,422)
+        # Mini CRT in center
+        cr=pygame.Rect(cx-185,155,370,255)
+        sc=crt(s,cr,330,195)
+        self._anim(); s.blit(self.anim,sc.topleft)
+        scan(s,sc)
 
+        txt(s,"Jadilah wasit VAR di ruang VOR.",F["body"],(50,70,80),cx,440)
+        txt(s,"Analisis tayangan ulang & buat keputusan!",F["body"],(50,70,80),cx,462)
         if self.blink:
-            fill_rect(surf,self.btn,INK,AMBER,4)
-            draw_text(surf,"► MULAI SEKARANG",F["press"],AMBER,cx,485)
-        draw_text(surf,"Kelompok Grafkom · Simulator VAR · 2025",F["tiny"],GREY,cx,560)
+            shadow_box(s,self.btn,CRT_BLUE,(20,50,110),8)
+            txt(s,"► MULAI SEKARANG",F["press"],WHITE,cx,544)
+        txt(s,"Kelompok Grafkom · 2025",F["tiny"],(100,130,140),cx,620)
 
-    def _draw_anim(self):
-        s = self.anim; t = self.t
-        IW,IH = 340,200
-        s.fill((20,84,20))
+    def _anim(self):
+        a=self.anim; t=self.t; IW,IH=320,190; a.fill((22,88,22))
         for i in range(5):
-            cl = pygame.Surface((68,IH),pygame.SRCALPHA)
-            cl.fill((0,0,0,18) if i%2 else (255,255,255,5))
-            s.blit(cl,(i*68,0))
-        pygame.draw.line(s,(255,255,255,100),(IW//2,0),(IW//2,IH),1)
-        pygame.draw.circle(s,(255,255,255,100),(IW//2,IH//2),30,1)
-        pygame.draw.rect(s,(255,255,255,100),(6,6,IW-12,IH-12),1)
-        bx=IW//2+int(math.sin(t*.04)*80); by=IH//2+int(math.cos(t*.06)*40)
-        pygame.draw.circle(s,WHITE,(bx,by),5)
-        p1x=bx-22+int(math.sin(t*.03)*4); p1y=by-2+int(math.cos(t*.05)*3)
-        pygame.draw.rect(s,(204,34,0),(p1x-5,p1y-4,10,16),border_radius=2)
-        pygame.draw.circle(s,(245,192,154),(p1x,p1y-7),4)
-        p2x=bx+28+int(math.cos(t*.025)*4); p2y=by+3+int(math.sin(t*.04)*3)
-        pygame.draw.rect(s,(0,68,187),(p2x-5,p2y-4,10,16),border_radius=2)
-        pygame.draw.circle(s,(245,192,154),(p2x,p2y-7),4)
+            sl=pygame.Surface((64,IH),pygame.SRCALPHA)
+            sl.fill((0,0,0,15) if i%2 else (255,255,255,5)); a.blit(sl,(i*64,0))
+        pygame.draw.line(a,(255,255,255,80),(IW//2,0),(IW//2,IH),1)
+        pygame.draw.circle(a,(255,255,255,80),(IW//2,IH//2),28,1)
+        bx=IW//2+int(math.sin(t*.04)*75); by=IH//2+int(math.cos(t*.06)*35)
+        pygame.draw.circle(a,WHITE,(bx,by),5)
+        for col,ox in [((204,34,0),-22),((0,68,187),26)]:
+            px=bx+ox+int(math.sin(t*.03)*4); py=by+int(math.cos(t*.05)*3)
+            pygame.draw.rect(a,col,(px-5,py-4,10,16),border_radius=2)
+            pygame.draw.circle(a,(245,192,154),(px,py-8),4)
 
-# ── LEVEL SELECT ─────────────────────────────────────────────────────────────
+# ── LEVEL SELECT ──────────────────────────────────────────────────────────────
 class LevelSelectScreen:
-    def __init__(self, fonts):
-        self.F = fonts; self.hover = -1
-        cw,ch,gap = 280,190,18
-        total = 3*cw+2*gap; sx=(WIN_W-total)//2; sy=175
-        self.cards = [pygame.Rect(sx+i*(cw+gap),sy,cw,ch) for i in range(3)]
-        self.back  = pygame.Rect(20,16,90,28)
+    def __init__(self,F):
+        self.F=F; self.hover=-1
+        cw,gap=290,20; total=3*cw+2*gap; sx=(WIN_W-total)//2
+        self.cards=[pygame.Rect(sx+i*(cw+gap),160,cw,230) for i in range(3)]
+        self.back=pygame.Rect(18,14,88,30)
 
-    def handle(self, ev):
-        if ev.type == pygame.MOUSEMOTION:
-            self.hover = next((i for i,r in enumerate(self.cards) if r.collidepoint(ev.pos)),-1)
-        if ev.type == pygame.MOUSEBUTTONDOWN:
-            if self.back.collidepoint(ev.pos): return "intro"
+    def handle(self,ev):
+        if ev.type==pygame.MOUSEMOTION:
+            self.hover=next((i for i,r in enumerate(self.cards) if r.collidepoint(ev.pos)),-1)
+        if ev.type==pygame.MOUSEBUTTONDOWN:
+            if self.back.collidepoint(ev.pos): return"intro"
             for i,r in enumerate(self.cards):
                 if r.collidepoint(ev.pos): return i+1
 
     def update(self): pass
 
-    def draw(self, surf):
-        surf.fill(INK); scanlines(surf)
+    def draw(self,s):
+        s.fill(DESK)
+        pygame.draw.rect(s,(90,130,145),(0,0,WIN_W,120))
+        pygame.draw.line(s,(70,110,125),(0,120),(WIN_W,120),4)
         F=self.F; cx=WIN_W//2
-        fill_rect(surf,self.back,(10,10,20),BORDER,3)
-        draw_text(surf,"◄ BACK",F["tiny"],GREY,self.back.centerx,self.back.centery)
-        draw_text(surf,"PILIH KATEGORI",F["press"],AMBER,cx,96)
-        draw_text(surf,"Sistem akan memilih video acak dari folder kategori",F["body"],GREY,cx,130)
-
+        shadow_box(s,self.back,CRT_BEIGE,CRT_SHADOW,4)
+        txt(s,"◄ BACK",F["tiny"],CRT_BEZEL,self.back.centerx,self.back.centery)
+        txt(s,"PILIH KATEGORI",F["press"],WHITE,cx,56)
+        txt(s,"Program akan memilih video acak dari folder yang dipilih",F["body"],(180,200,210),cx,92)
         cols=[GREEN,AMBER,RED]
         for i,(r,lid) in enumerate(zip(self.cards,[1,2,3])):
-            lv=LEVELS[lid]; col=cols[i]
-            off=-5 if self.hover==i else 0
-            rr=r.move(0,off)
-            if self.hover==i:
-                gl=pygame.Surface((rr.w+12,rr.h+12),pygame.SRCALPHA)
-                pygame.draw.rect(gl,(*col,36),(0,0,rr.w+12,rr.h+12),border_radius=8)
-                surf.blit(gl,(rr.x-6,rr.y-6))
-            fill_rect(surf,rr,(12,12,24),col,6)
-            fy=rr.y+12
-            draw_text(surf,lv["icon"],F["icon"],WHITE,rr.centerx,fy+16)
-            draw_text(surf,f"0{lid}",F["num"],col,rr.centerx,fy+54)
-            bb=F["tiny"].render(lv["badge"],True,col)
-            bsx=rr.centerx-bb.get_width()//2
+            lv=LEVELS[lid]; col=cols[i]; rr=r.move(0,-6 if self.hover==i else 0)
+            sc=crt(s,rr,250,155)
+            fy=sc.y+8
+            txt(s,lv["icon"],F["icon"],WHITE,sc.centerx,fy+14)
+            txt(s,f"LEVEL 0{lid}",F["body"],col,sc.centerx,fy+44)
+            bb=F["tiny"].render(lv["badge"],True,col); bx2=sc.centerx-bb.get_width()//2
             bg=pygame.Surface((bb.get_width()+10,bb.get_height()+4),pygame.SRCALPHA)
-            bg.fill((*col,36)); surf.blit(bg,(bsx-5,fy+72)); surf.blit(bb,(bsx,fy+74))
-            draw_text(surf,lv["name"],F["body"],(200,200,200),rr.centerx,fy+104)
-            # wrap case text
+            bg.fill((*col,40)); s.blit(bg,(bx2-5,fy+56)); s.blit(bb,(bx2,fy+58))
+            txt(s,lv["name"],F["body"],WHITE,sc.centerx,fy+84)
             words=lv["case"].split(); lines=[]; cur=""
             for w in words:
                 test=cur+" "+w if cur else w
-                if F["tiny"].size(test)[0]<rr.w-16: cur=test
-                else: lines.append(cur); cur=w
+                cur=test if F["tiny"].size(test)[0]<sc.w-10 else (lines.append(cur) or w)
             if cur: lines.append(cur)
-            for li,ln in enumerate(lines[:3]):
-                draw_text(surf,ln,F["tiny"],GREY,rr.centerx,fy+124+li*15)
+            for j,ln in enumerate(lines[:2]): txt(s,ln,F["tiny"],(160,170,170),sc.centerx,fy+106+j*16)
+            scan(s,sc)
 
-# ── GAME ─────────────────────────────────────────────────────────────────────
-MON_X, MON_Y, MON_W, MON_H = 268, 58, 592, 370
+# ── GAME ──────────────────────────────────────────────────────────────────────
+# Layout constants
+C_MON  = pygame.Rect(270, 30, 560, 400)   # Center monitor casing
+L_MON  = pygame.Rect(18,  90, 240, 220)   # Left monitor casing
+R_MON  = pygame.Rect(842, 90, 240, 220)   # Right monitor casing
+BOARD  = pygame.Rect(230, 448, 640, 118)  # Control board
 
 class GameScreen:
-    def __init__(self, fonts):
-        self.F = fonts
-        self.video = None
-        self.lv_id = 1
-        self.score_ok = 0; self.score_tot = 0
-        self._reset_state()
-        self._build_rects()
-        self.line_overlay = pygame.Surface((MON_W, MON_H), pygame.SRCALPHA)
+    def __init__(self,F):
+        self.F=F; self.video=None; self.lv_id=1
+        self.score_ok=0; self.score_tot=0
+        self._reset(); self._build()
 
-    def _reset_state(self):
-        self.zoom_idx  = 0
-        self.zoom      = ZOOM_LEVELS[0]
-        self.draw_mode = False
-        self.user_line = None
-        self.drag_start= None
-        self.dragging  = False
-        self.decided   = False
-        self.result    = None
-        self.cam_sel   = 1
-        self._next_btn = None
-        self._restart_btn = None
-        self.current_video_file = "Belum Ada Video"
+    def _reset(self):
+        self.zoom_idx=0; self.zoom=ZOOM_LEVELS[0]
+        self.draw_mode=False; self.user_line=None
+        self.drag_start=None; self.dragging=False
+        self.decided=False; self.result=None; self.cam_sel=1
+        self._next_btn=None; self._restart_btn=None
+        self.vid_file="Belum Ada Video"
+        self.inner_c=pygame.Rect(340,70,430,310)  # fallback
+        self.dyn_dec=[]
 
-    def _build_rects(self):
-        sx,sy = MON_X, MON_Y+MON_H+14
-        self.slider_rect  = pygame.Rect(sx, sy, MON_W, 10)
-        self.slider_drag  = False
-        by = sy+28; bh = 34
-        self.btns = {
-            "back":   pygame.Rect(8,10,80,24),
-            "m10":    pygame.Rect(sx,    by, 75,  bh),
-            "play":   pygame.Rect(sx+82, by, 100, bh),
-            "p10":    pygame.Rect(sx+189,by, 75,  bh),
-            "zm":     pygame.Rect(sx+280,by, 54,  bh),
-            "zp":     pygame.Rect(sx+341,by, 54,  bh),
-            "line":   pygame.Rect(sx+410,by, 100, bh),
+    def _build(self):
+        bx,by=BOARD.x,BOARD.y
+        self.slider=pygame.Rect(bx+200,by+50,240,12)
+        self.slider_drag=False
+        self.btns={
+            "back":  pygame.Rect(18,14,88,30),
+            "play":  pygame.Rect(bx+28, by+28,68,44),
+            "m5":    pygame.Rect(bx+106,by+28,68,44),
+            "p5":    pygame.Rect(bx+180,by+28,68,44), # ← added forward button
+            "zm":    pygame.Rect(bx+460,by+28,50,44),
+            "zp":    pygame.Rect(bx+520,by+28,50,44),
+            "line":  pygame.Rect(bx+580,by+28,46,44),
         }
-        dbx = MON_X+MON_W+18; dby0 = MON_Y; dbw,dbh = 192,52
-        self.dec_btns=[{**d,"rect":pygame.Rect(dbx,dby0+i*(dbh+10),dbw,dbh)} for i,d in enumerate(DECISIONS)]
-        self.left_rect = pygame.Rect(8, MON_Y, 252, MON_H)
+        self.dec_meta=[{"key":d["key"],"label":d["label"],"bg":d["bg"],"fg":d["fg"]} for d in DECISIONS]
+        self.cam_rects=[]
 
-    def boot(self, lv_id):
-        self.lv_id = lv_id
-        self._reset_state()
-        lv = LEVELS[lv_id]
-        
-        # --- LOGIKA MEMILIH VIDEO RANDOM DARI FOLDER ---
-        v_dir = lv.get("video_dir", "")
-        selected_path = "assets/placeholder.mp4"
-        
-        if os.path.exists(v_dir):
-            videos = [f for f in os.listdir(v_dir) if f.lower().endswith(('.mp4', '.avi', '.mov'))]
-            if videos:
-                chosen_file = random.choice(videos)
-                selected_path = os.path.join(v_dir, chosen_file)
-                self.current_video_file = chosen_file
-            else:
-                self.current_video_file = "[Folder Kosong]"
-        else:
-            self.current_video_file = "[Folder Tidak Ada]"
+    def boot(self,lid):
+        self.lv_id=lid; self._reset()
+        vdir=LEVELS[lid].get("video_dir","")
+        path="assets/placeholder.mp4"
+        if os.path.exists(vdir):
+            vids=[f for f in os.listdir(vdir) if f.lower().endswith(('.mp4','.avi','.mov'))]
+            if vids:
+                cf=random.choice(vids); path=os.path.join(vdir,cf); self.vid_file=cf
+            else: self.vid_file="[Folder Kosong]"
+        else: self.vid_file="[Folder Tidak Ada]"
+        self.video=VideoPlayer(path)
 
-        self.video = VideoPlayer(selected_path)
-        self.line_overlay.fill((0,0,0,0))
+    def _to_vid(self,sx,sy):
+        ic=self.inner_c
+        return (sx-ic.x)/ic.w,(sy-ic.y)/ic.h
 
-    def _mon_to_vid(self, sx, sy):
-        return (sx - MON_X) / MON_W, (sy - MON_Y) / MON_H
-
-    def handle(self, ev):
-        mon  = pygame.Rect(MON_X, MON_Y, MON_W, MON_H)
-        btns = self.btns
-        if ev.type == pygame.MOUSEBUTTONDOWN:
-            p = ev.pos
-            if btns["back"].collidepoint(p): return "levels"
-            if btns["m10"].collidepoint(p):   self._jump(-5)
-            if btns["play"].collidepoint(p):  self.video.toggle_play_pause() if self.video else None
-            if btns["p10"].collidepoint(p):   self._jump(5)
-            if btns["zm"].collidepoint(p):    self._do_zoom(-1)
-            if btns["zp"].collidepoint(p):    self._do_zoom(1)
-            if LEVELS[self.lv_id]["show_line"] and btns["line"].collidepoint(p):
-                self.draw_mode = not self.draw_mode
-                if not self.draw_mode:
-                    self.user_line = None
-                    self.line_overlay.fill((0,0,0,0))
-            if self.slider_rect.collidepoint(p):
-                self.slider_drag = True
-                self._seek_slider(p[0])
-            if self.draw_mode and mon.collidepoint(p):
-                vx,vy = self._mon_to_vid(*p)
-                self.drag_start = (vx,vy)
-                self.user_line  = (vx,vy,vx,vy)
-                self.dragging   = True
+    def handle(self,ev):
+        B=self.btns
+        if ev.type==pygame.MOUSEBUTTONDOWN:
+            p=ev.pos
+            if B["back"].collidepoint(p): return"levels"
+            if B["m5"].collidepoint(p):  self._jump(-5)
+            if B["p5"].collidepoint(p):  self._jump(5)
+            if B["play"].collidepoint(p) and self.video: self.video.toggle_play_pause()
+            if B["zm"].collidepoint(p):  self._zoom(-1)
+            if B["zp"].collidepoint(p):  self._zoom(1)
+            if LEVELS[self.lv_id]["show_line"] and B["line"].collidepoint(p):
+                self.draw_mode=not self.draw_mode
+                if not self.draw_mode: self.user_line=None
+            if self.slider.collidepoint(p): self.slider_drag=True; self._seek(p[0])
+            for i,r in enumerate(self.cam_rects):
+                if r.collidepoint(p): self.cam_sel=i+1
+            if self.draw_mode and self.inner_c.collidepoint(p):
+                vx,vy=self._to_vid(*p); self.drag_start=(vx,vy)
+                self.user_line=(vx,vy,vx,vy); self.dragging=True
             if not self.decided:
-                for d in self.dec_btns:
+                for d in self.dyn_dec:
                     if d["rect"].collidepoint(p): self._decide(d["key"])
-
-        if ev.type == pygame.MOUSEMOTION:
-            if self.slider_drag: self._seek_slider(ev.pos[0])
+        if ev.type==pygame.MOUSEMOTION:
+            if self.slider_drag: self._seek(ev.pos[0])
             if self.dragging and self.drag_start:
-                vx,vy = self._mon_to_vid(*ev.pos)
-                x1,y1 = self.drag_start
-                self.user_line = (x1,y1,vx,vy)
+                vx,vy=self._to_vid(*ev.pos); x1,y1=self.drag_start
+                self.user_line=(x1,y1,vx,vy)
+        if ev.type==pygame.MOUSEBUTTONUP: self.slider_drag=False; self.dragging=False
+        if ev.type==pygame.KEYDOWN:
+            if ev.key==pygame.K_SPACE and self.video: self.video.toggle_play_pause()
+            if ev.key==pygame.K_LEFT:  self._jump(-3)
+            if ev.key==pygame.K_RIGHT: self._jump(3)
 
-        if ev.type == pygame.MOUSEBUTTONUP:
-            self.slider_drag = False; self.dragging = False
-
-        if ev.type == pygame.KEYDOWN:
-            if ev.key == pygame.K_SPACE and self.video: self.video.toggle_play_pause()
-            if ev.key == pygame.K_LEFT:  self._jump(-3)
-            if ev.key == pygame.K_RIGHT: self._jump(3)
-            if ev.key == pygame.K_r and self.video: self.video.rewind()
-
-    def _seek_slider(self, mx):
+    def _seek(self,mx):
         if not self.video: return
-        r = max(0.0,min(1.0,(mx-self.slider_rect.x)/self.slider_rect.w))
-        self.video.seek(int(r*self.video.total_frames))
-        self.video.is_playing = False
+        r=max(0.,min(1.,(mx-self.slider.x)/self.slider.w))
+        self.video.seek(int(r*self.video.total_frames)); self.video.is_playing=False
 
-    def _jump(self, d):
-        if self.video:
-            self.video.seek(self.video.current_frame_index + d)
-            self.video.is_playing = False
+    def _jump(self,d):
+        if self.video: self.video.seek(self.video.current_frame_index+d); self.video.is_playing=False
 
-    def _do_zoom(self, d):
-        self.zoom_idx = max(0,min(len(ZOOM_LEVELS)-1,self.zoom_idx+d))
-        self.zoom = ZOOM_LEVELS[self.zoom_idx]
+    def _zoom(self,d):
+        self.zoom_idx=max(0,min(len(ZOOM_LEVELS)-1,self.zoom_idx+d))
+        self.zoom=ZOOM_LEVELS[self.zoom_idx]
 
-    def _decide(self, key):
+    def _decide(self,key):
         if not self.video: return
-        self.decided = True
-        self.video.is_playing = False
-        lv = LEVELS[self.lv_id]; ok = key == lv["ans"]
-        if ok: self.score_ok += 1
-        self.score_tot += 1
-        self.result = {"ok":ok,"key":key,"lv":lv,"next_lv":self.lv_id<3}
+        self.decided=True; self.video.is_playing=False
+        lv=LEVELS[self.lv_id]; ok=key==lv["ans"]
+        if ok: self.score_ok+=1
+        self.score_tot+=1; self.result={"ok":ok,"key":key,"lv":lv,"next_lv":self.lv_id<3}
 
-    def update(self, dt):
-        if self.video and not self.decided:
-            self.video.advance()
+    def update(self,dt):
+        if self.video and not self.decided: self.video.advance()
 
-    def draw(self, surf):
-        surf.fill(DESK); scanlines(surf)
+    def draw(self,s):
         F=self.F; lv=LEVELS[self.lv_id]
 
-        pygame.draw.rect(surf,(8,8,18),(0,0,WIN_W,52))
-        pygame.draw.line(surf,BORDER,(0,52),(WIN_W,52))
-        fill_rect(surf,self.btns["back"],(10,10,20),BORDER,3)
-        draw_text(surf,"◄ BACK",F["tiny"],GREY,self.btns["back"].centerx,self.btns["back"].centery)
-        draw_text(surf,"KATEGORI",F["tiny"],GREY,WIN_W//2-200,18)
-        draw_text(surf,lv["name"],F["body"],AMBER,WIN_W//2-200,36)
-        
-        # Tampilkan nama file yang sedang dimainkan
-        draw_text(surf,"FILE AKTIF:",F["tiny"],GREY,WIN_W//2+40,18)
-        draw_text(surf,self.current_video_file,F["tiny"],BLUE,WIN_W//2+40,36)
-        
-        draw_text(surf,"SKOR",F["tiny"],GREY,WIN_W-65,18)
-        draw_text(surf,f"{self.score_ok}/{self.score_tot}",F["body"],GREEN,WIN_W-65,36)
+        # ── Background: wall + desk ───────────────────────────────────────────
+        s.fill(DESK)
+        pygame.draw.rect(s,(88,128,142),(0,0,WIN_W,60))
+        pygame.draw.line(s,(68,108,122),(0,60),(WIN_W,60),4)
 
-        lp=self.left_rect
-        fill_rect(surf,lp,(0,8,22),BORDER,4)
-        draw_text(surf,"LIVE FEED",F["tiny"],GREY,lp.centerx,lp.y+14)
-        pygame.draw.rect(surf,(180,0,0),(lp.x+8,lp.y+28,38,14),border_radius=2)
-        draw_text(surf,"LIVE",F["tiny"],WHITE,lp.x+27,lp.y+35)
-        draw_text(surf,"1 — 1",F["mono"],WHITE,lp.centerx,lp.y+72)
-        draw_text(surf,"⏱ 78'",F["body"],(120,170,187),lp.centerx,lp.y+102)
-        draw_text(surf,"VAR Review Active",F["tiny"],(170,130,130),lp.centerx,lp.y+126)
-        
-        pygame.draw.line(surf,BORDER,(lp.x+6,lp.y+148),(lp.right-6,lp.y+148))
-        draw_text(surf,"⚖ ATURAN VAR",F["body"],(180,120,255),lp.centerx,lp.y+164)
-        for i,rule in enumerate(lv["rules"]):
-            draw_text(surf,rule,F["tiny"],(140,90,200),lp.centerx,lp.y+186+i*26)
+        # ── Top bar ───────────────────────────────────────────────────────────
+        shadow_box(s,self.btns["back"],CRT_BEIGE,CRT_SHADOW,4)
+        txt(s,"◄ EXIT",F["tiny"],CRT_BEZEL,self.btns["back"].centerx,self.btns["back"].centery)
+        txt(s,lv["name"],F["press"],WHITE,WIN_W//2,30)
+        txt(s,f"SKOR  {self.score_ok} / {self.score_tot}",F["body"],WHITE,WIN_W-80,30)
 
-        mon_rect = pygame.Rect(MON_X,MON_Y,MON_W,MON_H)
-        pygame.draw.rect(surf,(5,5,10),mon_rect,border_radius=4)
+        # ── LEFT Monitor: Live Feed ───────────────────────────────────────────
+        il=crt(s,L_MON,200,158)
+        pygame.draw.rect(s,(170,0,0),(il.x+6,il.y+8,36,14),border_radius=2)
+        txt(s,"LIVE",F["tiny"],WHITE,il.x+24,il.y+15)
+        txt(s,"LIVE FEED",F["tiny"],(150,220,150),il.centerx,il.y+36)
+        txt(s,"1  —  1",F["mono"],WHITE,il.centerx,il.y+68)
+        txt(s,"⏱ 78'",F["body"],(120,180,200),il.centerx,il.y+92)
+        clbls=["CAM1","CAM2","GOAL"]; self.cam_rects=[]
+        for i,lb in enumerate(clbls):
+            r=pygame.Rect(il.x+4+(i*64),il.bottom-28,58,22)
+            self.cam_rects.append(r)
+            act=i+1==self.cam_sel
+            box(s,r,(60,20,20) if act else (30,44,54),(120,40,40) if act else (50,70,80),3)
+            txt(s,lb,F["tiny"],WHITE,r.centerx,r.centery)
+        scan(s,il)
 
+        # ── RIGHT Monitor: Decision System ────────────────────────────────────
+        ir=crt(s,R_MON,200,158)
+        txt(s,"DISCIPLINARY",F["tiny"],(140,255,140),ir.centerx,ir.y+16)
+        txt(s,"ACTION SYSTEM",F["tiny"],(140,255,140),ir.centerx,ir.y+30)
+        pygame.draw.line(s,(60,80,60),(ir.x+8,ir.y+42),(ir.right-8,ir.y+42),1)
+        self.dyn_dec=[]
+        for i,d in enumerate(self.dec_meta):
+            r=pygame.Rect(ir.x+8,ir.y+50+i*26,ir.w-16,22)
+            self.dyn_dec.append({"rect":r,"key":d["key"]})
+            dim=self.decided and not(self.result and self.result["key"]==d["key"])
+            a=70 if dim else 255
+            ds=pygame.Surface((r.w,r.h),pygame.SRCALPHA)
+            pygame.draw.rect(ds,(*d["bg"],a),(0,0,r.w,r.h),border_radius=3); s.blit(ds,r.topleft)
+            ts=F["tiny"].render(d["label"],True,(*d["fg"],a)); s.blit(ts,ts.get_rect(center=r.center))
+        scan(s,ir)
+
+        # ── CENTER Monitor: Main Video ────────────────────────────────────────
+        self.inner_c=crt(s,C_MON,490,318)
+        ic=self.inner_c
         if self.video:
-            raw_surf = self.video.get_surface((MON_W, MON_H))
-            if self.zoom > 1.0:
-                cw=int(MON_W/self.zoom); ch=int(MON_H/self.zoom)
-                cx2=MON_W//2-cw//2; cy2=MON_H//2-ch//2
-                crop=pygame.Rect(cx2,cy2,cw,ch).clip(raw_surf.get_rect())
-                if crop.w>0 and crop.h>0:
-                    raw_surf=pygame.transform.scale(raw_surf.subsurface(crop),(MON_W,MON_H))
-
-            surf.blit(raw_surf, (MON_X,MON_Y))
-            sl=pygame.Surface((MON_W,MON_H),pygame.SRCALPHA)
-            for y in range(0,MON_H,4): pygame.draw.line(sl,(0,0,0,36),(0,y),(MON_W,y))
-            surf.blit(sl,(MON_X,MON_Y))
-
+            raw=self.video.get_surface((ic.w,ic.h))
+            if self.zoom>1.0:
+                cw2=int(ic.w/self.zoom); ch2=int(ic.h/self.zoom)
+                crop=pygame.Rect(ic.w//2-cw2//2,ic.h//2-ch2//2,cw2,ch2).clip(raw.get_rect())
+                if crop.w>0 and crop.h>0: raw=pygame.transform.scale(raw.subsurface(crop),(ic.w,ic.h))
+            s.blit(raw,ic.topleft)
             if self.user_line:
-                x1r,y1r,x2r,y2r = self.user_line
-                p1=(int(MON_X+x1r*MON_W), int(MON_Y+y1r*MON_H))
-                p2=(int(MON_X+x2r*MON_W), int(MON_Y+y2r*MON_H))
-                bresenham(surf,p1,p2,AMBER,thickness=2)
-                pygame.draw.circle(surf,AMBER,p1,6); pygame.draw.circle(surf,AMBER,p2,6)
-
-            prog = self.video.current_frame_index; tot = max(self.video.total_frames,1)
-            draw_text(surf,f"F {prog:04d}/{tot:04d}",F["tiny"],AMBER,MON_X+50,MON_Y+12)
+                x1r,y1r,x2r,y2r=self.user_line
+                p1=(int(ic.x+x1r*ic.w),int(ic.y+y1r*ic.h))
+                p2=(int(ic.x+x2r*ic.w),int(ic.y+y2r*ic.h))
+                bresenham(s,p1,p2,AMBER,2)
+                pygame.draw.circle(s,AMBER,p1,5); pygame.draw.circle(s,AMBER,p2,5)
         else:
-            draw_text(surf,"Video tidak ditemukan",F["body"],GREY,MON_X+MON_W//2,MON_Y+MON_H//2)
+            txt(s,"Tidak ada video",F["body"],GREY,ic.centerx,ic.centery)
+        scan(s,ic)
+        # HUD overlay on monitor
+        prog=self.video.current_frame_index if self.video else 0
+        tot=self.video.total_frames if self.video else 1
+        pygame.draw.rect(s,(0,0,0,120),(ic.x,ic.y,ic.w,22))
+        txt(s,f"FRAME {prog:04d}/{tot:04d}",F["tiny"],(180,220,255),ic.x+60,ic.y+11)
+        txt(s,f"ZOOM ×{self.zoom:.1f}",F["tiny"],AMBER,ic.right-38,ic.y+11)
+        pygame.draw.rect(s,(0,0,0,100),(ic.x,ic.bottom-20,ic.w,20))
+        fname=self.vid_file if len(self.vid_file)<40 else self.vid_file[:38]+"…"
+        txt(s,f"▶ {fname}",F["tiny"],(160,180,190),ic.centerx,ic.bottom-10)
 
-        pygame.draw.rect(surf,BORDER,mon_rect,2,border_radius=4)
-        draw_text(surf,f"ZOOM ×{self.zoom:.1f}",F["tiny"],BLUE,MON_X+MON_W-40,MON_Y+12)
+        # ── CONTROL BOARD ─────────────────────────────────────────────────────
+        shadow_box(s,BOARD,CRT_BEIGE,CRT_SHADOW,14)
+        # Decorative line top of board
+        pygame.draw.line(s,WHITE,(BOARD.x+16,BOARD.y+6),(BOARD.right-16,BOARD.y+6),2)
 
-        sr = self.slider_rect
-        fill_rect(surf,sr,(22,22,44),None,3)
-        prog_ratio = self.video.current_frame_index/self.video.total_frames if self.video and self.video.total_frames>0 else 0
-        fw=int(sr.w*prog_ratio)
-        if fw>0: pygame.draw.rect(surf,BLUE,(sr.x,sr.y,fw,sr.h),border_radius=3)
-        pygame.draw.circle(surf,(200,220,255),(sr.x+fw,sr.centery),7)
-        pygame.draw.circle(surf,BLUE,(sr.x+fw,sr.centery),7,2)
+        # Slider track
+        sr=self.slider
+        pygame.draw.rect(s,(60,65,70),sr,border_radius=4)
+        pygame.draw.line(s,(35,40,45),(sr.x+4,sr.centery),(sr.right-4,sr.centery),2)
+        ratio=prog/tot if tot>0 else 0
+        fw=int(sr.w*ratio)
+        if fw>0: pygame.draw.rect(s,CRT_BLUE,(sr.x,sr.y,fw,sr.h),border_radius=4)
+        kx=sr.x+fw; pygame.draw.rect(s,(180,210,255),(kx-8,sr.centery-13,16,26),border_radius=4)
+        box(s,pygame.Rect(kx-8,sr.centery-13,16,26),None,(100,140,200),4,2)
 
-        playing = self.video.is_playing if self.video else False
-        ctrl_defs = [
-            ("m10","⏮ −5f",False),
-            ("play","⏸ PAUSE" if playing else "▶ PUTAR",playing),
-            ("p10","+5f ⏭",False),
-            ("zm","🔍−",False),
-            ("zp","🔍+",False),
-        ]
-        for key,label,act in ctrl_defs:
+        # Playback buttons
+        playing=self.video.is_playing if self.video else False
+        for key,lbl,act in [("m5","◄◄",False),("play","▐▐" if playing else "►",playing),("p5","►►",False)]:
             r=self.btns[key]
-            fill_rect(surf,r,(10,10,32) if not act else (10,30,70),BLUE if act else BORDER,3)
-            draw_text(surf,label,F["body"],(200,200,255) if act else (136,136,160),r.centerx,r.centery)
+            shadow_box(s,r,CRT_BLUE if act else (72,110,152),(20,50,110) if act else (40,70,110),6)
+            txt(s,lbl,F["body"],WHITE,r.centerx,r.centery)
+
+        # Zoom & Line buttons
+        for key,lbl,act in [("zm","−",False),("zp","+",False)]:
+            r=self.btns[key]; shadow_box(s,r,(72,110,152),(40,70,110),6)
+            txt(s,lbl,F["body"],WHITE,r.centerx,r.centery)
 
         if lv["show_line"]:
-            r=self.btns["line"]
-            fill_rect(surf,r,(10,30,60) if self.draw_mode else (10,10,32),BLUE if self.draw_mode else BORDER,3)
-            lbl="✏ SELESAI" if self.draw_mode else "✏ GARIS"
-            draw_text(surf,lbl,F["body"],BLUE if self.draw_mode else GREY,r.centerx,r.centery)
-            if self.draw_mode:
-                draw_text(surf,"Klik & seret di monitor untuk garis offside",F["tiny"],AMBER,MON_X+MON_W//2,self.btns["play"].bottom+18)
+            r=self.btns["line"]; act=self.draw_mode
+            shadow_box(s,r,(160,50,50) if act else (72,110,152),(80,20,20) if act else (40,70,110),6)
+            txt(s,"✏",F["body"],WHITE,r.centerx,r.centery)
 
-        dx = self.dec_btns[0]["rect"].x
-        draw_text(surf,"▶ KEPUTUSAN:",F["tiny"],GREY,dx+96,MON_Y-14)
-        for d in self.dec_btns:
-            r=d["rect"]; dim = self.decided and not(self.result and self.result["key"]==d["key"])
-            s=pygame.Surface((r.w,r.h),pygame.SRCALPHA); a=80 if dim else 255
-            pygame.draw.rect(s,(*d["bg"],a),(0,0,r.w,r.h),border_radius=6); surf.blit(s,r.topleft)
-            t=F["body"].render(d["label"],True,(*d["fg"],a)); surf.blit(t,t.get_rect(center=r.center))
+        # Labels under slider
+        txt(s,"TIMELINE",F["tiny"],(100,130,140),sr.centerx,sr.bottom+14)
+        txt(s,"ZOOM",F["tiny"],(100,130,140),self.btns["zm"].centerx+25,BOARD.y+82)
 
-        draw_text(surf,"SPACE=Play  ←/→=Frame  R=Rewind  ESC=Keluar",F["tiny"],GREY,WIN_W//2,WIN_H-12)
-        if self.result: self._draw_result(surf)
+        # ── PROPS ─────────────────────────────────────────────────────────────
+        # Red rule book
+        bk=pygame.Rect(42,490,130,118)
+        shadow_box(s,bk,(185,38,38),(110,18,18),4)
+        pygame.draw.rect(s,(210,210,210),(bk.x,bk.bottom-10,bk.w,10),border_radius=2)
+        txt(s,"RULES",F["tiny"],(255,180,180),bk.centerx,bk.centery-10)
 
-    def _draw_result(self, surf):
+        # Grey notepad
+        np=pygame.Rect(920,510,130,55)
+        shadow_box(s,np,(200,205,195),(140,145,135),4)
+        for row in range(3): pygame.draw.line(s,(155,160,150),(np.x+10,np.y+14+row*14),(np.right-10,np.y+14+row*14),1)
+
+        if self.result: self._result_overlay(s)
+
+    def _result_overlay(self,s):
         F=self.F; res=self.result; ok=res["ok"]
-        ov=pygame.Surface((WIN_W,WIN_H),pygame.SRCALPHA); ov.fill((0,0,0,220)); surf.blit(ov,(0,0))
-        cx=WIN_W//2; bw,bh=440,310; bx,by=cx-bw//2,WIN_H//2-bh//2
-        fill_rect(surf,pygame.Rect(bx,by,bw,bh),(7,7,15),AMBER,4,2)
-        draw_text(surf,"✅" if ok else "❌",F["icon"],WHITE,cx,by+44)
-        draw_text(surf,"BENAR!" if ok else "SALAH!",F["press"],GREEN if ok else RED,cx,by+90)
-        draw_text(surf,res["lv"]["explain"],F["tiny"],GREY,cx,by+132)
-        draw_text(surf,"Jawaban: "+res["lv"]["ans_label"],F["tiny"],(102,102,102),cx,by+160)
-        draw_text(surf,f"Skor: {self.score_ok} / {self.score_tot}",F["mono"],GREEN,cx,by+194)
-        nb=pygame.Rect(cx-100,by+234,200,44); fill_rect(surf,nb,DARK,AMBER,4)
+        ov=pygame.Surface((WIN_W,WIN_H),pygame.SRCALPHA); ov.fill((0,0,0,210)); s.blit(ov,(0,0))
+        cx=WIN_W//2; bw,bh=460,320; bx,by=cx-bw//2,WIN_H//2-bh//2
+        shadow_box(s,pygame.Rect(bx,by,bw,bh),CRT_BEIGE,CRT_BEZEL,10)
+        txt(s,"✅" if ok else "❌",F["icon"],CRT_BEZEL,cx,by+46)
+        txt(s,"KEPUTUSAN BENAR!" if ok else "KEPUTUSAN SALAH!",F["press"],GREEN if ok else RED,cx,by+94)
+        txt(s,res["lv"]["explain"],F["tiny"],CRT_BEZEL,cx,by+136)
+        txt(s,"Jawaban: "+res["lv"]["ans_label"],F["tiny"],(90,90,90),cx,by+162)
+        txt(s,f"Skor: {self.score_ok} / {self.score_tot}",F["mono"],CRT_BEZEL,cx,by+196)
+        nb=pygame.Rect(cx-110,by+244,220,46)
+        shadow_box(s,nb,CRT_BLUE,(20,50,110),8)
         lbl="LEVEL BERIKUTNYA ►" if res["next_lv"] else "LIHAT HASIL ►"
-        draw_text(surf,lbl,F["tiny"],AMBER,cx,nb.centery); self._next_btn=nb
+        txt(s,lbl,F["tiny"],WHITE,cx,nb.centery); self._next_btn=nb
 
-    def handle_result_click(self, pos):
+    def handle_result_click(self,pos):
         if self.result and self._next_btn and self._next_btn.collidepoint(pos):
-            return "next" if self.result["next_lv"] else "final"
+            return"next" if self.result["next_lv"] else"final"
 
-    def draw_final(self, surf):
+    def draw_final(self,s):
         F=self.F; c=self.score_ok; t=self.score_tot; cx=WIN_W//2
-        ov=pygame.Surface((WIN_W,WIN_H),pygame.SRCALPHA); ov.fill((0,0,0,225)); surf.blit(ov,(0,0))
-        bw,bh=460,340; bx,by=cx-bw//2,WIN_H//2-bh//2
-        fill_rect(surf,pygame.Rect(bx,by,bw,bh),(7,7,15),GREEN,4,2)
-        draw_text(surf,"⚽ GAME SELESAI!",F["press"],AMBER,cx,by+42)
-        draw_text(surf,"⭐"*c if c>0 else "—",F["big"],(255,200,0),cx,by+96)
-        draw_text(surf,f"{c}/{t}",F["big"],GREEN,cx,by+174)
-        draw_text(surf,SCORE_MSGS[c],F["mono"],GREY,cx,by+238)
-        rb=pygame.Rect(cx-100,by+274,200,44); fill_rect(surf,rb,DARK,GREEN,4)
-        draw_text(surf,"↺ MAIN LAGI",F["tiny"],GREEN,cx,rb.centery); self._restart_btn=rb
+        ov=pygame.Surface((WIN_W,WIN_H),pygame.SRCALPHA); ov.fill((0,0,0,220)); s.blit(ov,(0,0))
+        bw,bh=480,360; bx,by=cx-bw//2,WIN_H//2-bh//2
+        shadow_box(s,pygame.Rect(bx,by,bw,bh),CRT_BEIGE,CRT_BEZEL,10)
+        txt(s,"⚽ GAME SELESAI!",F["press"],CRT_BEZEL,cx,by+44)
+        txt(s,"⭐"*c if c>0 else "—",F["big"],AMBER,cx,by+100)
+        txt(s,f"{c} / {t}",F["big"],CRT_BEZEL,cx,by+178)
+        txt(s,SCORE_MSGS[c],F["mono"],(80,80,80),cx,by+244)
+        rb=pygame.Rect(cx-110,by+284,220,46)
+        shadow_box(s,rb,CRT_BLUE,(20,50,110),8)
+        txt(s,"↺ MAIN LAGI",F["tiny"],WHITE,cx,rb.centery); self._restart_btn=rb
